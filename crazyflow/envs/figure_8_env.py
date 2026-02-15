@@ -77,6 +77,7 @@ class FigureEightEnv(DroneEnv):
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     def render(self):
+        import pdb; pdb.set_trace()
         idx = (self.steps + self.sample_offsets[None, ...]) % self.trajectory.shape[0]
         next_trajectory = self.trajectory[idx, ...]
         draw_line(self.sim, next_trajectory[0], start_size=3.0, end_size=3.0)

@@ -1,0 +1,46 @@
+<?xml version="1.0" ?>
+
+<robot name="gate">
+
+  <link name="base_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 1.57 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../stl/gate.stl" scale="0.002 0.002 0.002"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.0 0.0 1.0 1"/>
+      </material> 
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0.9 0"/>
+      <geometry>
+        <box size="0.2 0.2 2.0"/>
+      </geometry>
+    </collision>  
+    <collision>
+      <origin rpy="0 0 0" xyz="0 -0.9 0"/>
+      <geometry>
+        <box size="0.2 0.2 2.0"/>
+      </geometry>
+    </collision>  
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.9"/>
+      <geometry>
+        <box size="0.2 1.6 0.2"/>
+      </geometry>
+    </collision>  
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -0.9"/>
+      <geometry>
+        <box size="0.2 1.6 0.2"/>
+      </geometry>
+    </collision>  
+  </link>
+
+</robot>

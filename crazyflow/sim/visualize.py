@@ -5,7 +5,6 @@ from scipy.spatial.transform import Rotation as R
 
 from crazyflow.sim import Sim
 
-
 def draw_line(
     sim: Sim,
     points: NDArray,
@@ -43,6 +42,59 @@ def draw_line(
             type=mujoco.mjtGeom.mjGEOM_LINE, size=sizes[i], pos=points[i], mat=mats[i], rgba=rgba
         )
 
+def draw_arrow(
+    sim: Sim,
+    points: NDArray,
+    rgba: NDArray | None = None,
+    start_size: float = 3.0,
+    end_size: float = 3.0,
+    head_radius: float = 0.05,
+    head_length: float = 0.1,
+):
+    """Draw a line with an arrow head at the end into the simulation.
+
+    Args:
+        sim: The simulation.
+        points: An array of [N, 3] points that make up the arrow.
+        rgba: The color of the arrow.
+        start_size: The size of the start of the line.
+        end_size: The size of the end of the line.
+        head_radius: The radius of the cone head.
+        head_length: The length of the cone head.
+    """
+    if sim.viewer is None or len(points) < 2:
+        return
+
+    viewer = sim.viewer.viewer
+    if rgba is None:
+        rgba = np.array([1.0, 0, 0, 1])
+
+    # Treat points as defining a single vector from start to end
+    p1 = points[0]
+    p2 = points[-1]
+
+    diff = p2 - p1
+    length = np.linalg.norm(diff)
+    if length < 1e-6:
+        return
+
+    # Position is the midpoint of the arrow
+    pos = (p1 + p2) / 2
+
+    # Orientation: align Z-axis with the vector
+    mat = _rotation_matrix_from_points(p1[None, :], p2[None, :]).as_matrix()[0].flatten()
+
+    # mjGEOM_ARROW size: [shaft_radius, half_length, head_radius]
+    # We derive shaft_radius from head_radius (or could use start_size if it was in meters)
+    shaft_radius = head_radius / 2.5
+
+    viewer.add_marker(
+        type=mujoco.mjtGeom.mjGEOM_LINEBOX,
+        size=np.array([shaft_radius, length / 2, head_radius]),
+        pos=pos,
+        mat=mat,
+        rgba=rgba,
+    )
 
 def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: float = 0.01):
     """Draw points into the simulation.
@@ -67,7 +119,6 @@ def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: fl
             pos=points[i],
             rgba=rgba,
         )
-
 
 def _rotation_matrix_from_points(p1: NDArray, p2: NDArray) -> R:
     """Generate rotation matrices that align their z-axis to p2-p1."""

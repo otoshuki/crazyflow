@@ -74,6 +74,7 @@ class DroneEnv(VectorEnv):
             reset_randomization: A function that randomizes the initial state of the simulation. If
                 None, the default randomization for pos and vel is used.
         """
+
         self.num_envs = num_envs
         self.device = jax.devices(device)[0]
         self.freq = freq

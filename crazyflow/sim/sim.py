@@ -501,7 +501,6 @@ def step_thrust_controller(data: SimData) -> SimData:
     controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
     return data.replace(controls=controls)
 
-
 def analytical_wrench(data: SimData) -> SimData:
     """Compute the wrench from the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params

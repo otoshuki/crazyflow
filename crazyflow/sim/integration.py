@@ -55,7 +55,7 @@ def symplectic_euler(data: SimData, deriv_fn: Callable[[SimData], SimData]) -> S
         data: The simulation data structure.
         deriv_fn: The function to compute the derivative of the dynamics.
     """
-    return integrate(data, deriv_fn(data), dt=1 / data.core.freq)
+    return integrate_symplectic(data, deriv_fn(data), dt=1 / data.core.freq)
 
 
 def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:

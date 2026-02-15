@@ -1,0 +1,16 @@
+<mujoco>
+    <asset>
+        <material name="polished_plastic" rgba="0.631 0.659 0.678 1"/>
+        <material name="polished_gold" rgba="0.969 0.878 0.6 1"/>
+        <material name="medium_gloss_plastic" rgba="0.109 0.184 0.0 1"/>
+        <material name="propeller_plastic" rgba="0.792 0.820 0.933 1"/>
+        <material name="white" rgba="1 1 1 1"/>
+        <material name="body_frame_plastic" rgba="0.102 0.102 0.102 1"/>
+        <material name="burnished_chrome" rgba="0.898 0.898 0.898 1"/>
+
+        <mesh file="cf2_1.obj" scale="1.0 1.0 1.0"/>
+        <mesh file="cf2_2.obj" scale="1.0 1.0 1.0"/>
+        <mesh file="cf2_3.obj" scale="1.0 1.0 1.0"/>
+        <mesh file="cf21bl.stl" scale="0.001 0.001 0.001"/>
+    </asset>
+</mujoco>
