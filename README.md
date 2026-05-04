@@ -2,7 +2,9 @@
 
 --------------------------------------------------------------------------------
 
-Fast, parallelizable simulations of drones with JAX.
+Fast, parallelizable simulations of drones with JAX. 
+
+I do not own the original project. Please check modified branch fomega for thrust-angular velocity based control approach.
 
 [![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
 
