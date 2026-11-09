@@ -49,7 +49,7 @@ def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Retur
 
 class Sim:
     default_path = Path(__file__).parents[1] / "models/cf2/scene.xml"
-    drone_path = Path(__file__).parents[1] / "models/cf2/cf2.xml"
+    drone_path = Path(__file__).parents[1] / "models/cf2/cf2bl.xml"
 
     def __init__(
         self,
@@ -497,13 +497,18 @@ def step_thrust_controller(data: SimData) -> SimData:
     controls = data.controls
     steps = data.core.steps
     mask = controllable(steps, data.core.freq, controls.thrust_steps, controls.thrust_freq)
-    rpms = pwm2rpm(thrust2pwm(controls.thrust))
+    #rpms = pwm2rpm(thrust2pwm(controls.thrust))
+    thrust = jnp.nan_to_num(controls.thrust, nan=0.0, posinf=0.0, neginf=0.0)
+    thrust = jnp.maximum(thrust, 0.0)  # avoid sqrt of negative
+    rpms = jnp.sqrt(thrust / 3.5e-10)
     controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
     return data.replace(controls=controls)
 
 def analytical_wrench(data: SimData) -> SimData:
     """Compute the wrench from the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params
+    # jax.debug.print("rpm before={}", controls.rpms)
+
     force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.ang_vel, params.J)
     return data.replace(states=data.states.replace(force=force, torque=torque))
 

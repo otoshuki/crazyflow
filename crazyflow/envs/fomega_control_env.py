@@ -28,7 +28,8 @@ from crazyflow.control.control import (
     MIN_THRUST,MAX_THRUST,MIX_MATRIX,
     MAX_PWM,MIN_PWM,
     P_RATE,I_RATE,D_RATE,I_RATE_RANGE,
-    thrust2pwm_kernel,pwm2thrust_kernel
+    DEFAULT_TOTAL_THRUST_CURVE,
+    thrust2pwm_curve_kernel,pwm2thrust_curve_kernel,
 )
 
 RAD_TO_DEG = 180.0 / jnp.pi
@@ -39,6 +40,12 @@ def rates_to_motor_thrusts_pid_kernel(
     current_rates: Array, # Input: (B, 1, 3) [p_actual, q_actual, r_actual]
     rate_err_i: Array,    # State: (B, 1, 3) integral of rate error
     last_err_p: Array,    # State: (B, 1, 3) last proportional error
+    command_curve: Array, # (B, 3), total-thrust [A, B, C]
+    plant_curve: Array,   # (B, 3), total-thrust [A, B, C]
+    pwm_scale: float,
+    rate_p: Array,        # (B, 3)
+    rate_i: Array,        # (B, 3)
+    rate_d: Array,        # (B, 3)
     dt: float,
 ) -> tuple[Array, Array, Array]:
     """
@@ -46,18 +53,20 @@ def rates_to_motor_thrusts_pid_kernel(
     """
     desired_thrust = controls[..., 0:1]
     desired_rates = controls[..., 1:4]
-    rate_error_p = (desired_rates - current_rates)* RAD_TO_DEG
+    rate_error_p = (desired_rates - current_rates)*RAD_TO_DEG
     rate_err_i = rate_err_i + rate_error_p * dt
     rate_err_i = jnp.clip(rate_err_i, -I_RATE_RANGE, I_RATE_RANGE)
     rate_error_d = (rate_error_p - last_err_p) / dt
     target_torques = (
-        P_RATE * rate_error_p +
-        I_RATE * rate_err_i +
-        D_RATE * rate_error_d
+        rate_p * rate_error_p +
+        rate_i * rate_err_i +
+        rate_d * rate_error_d
     )
     #Thrust component
     base_thrust_per_motor = jnp.atleast_1d(desired_thrust) / 4.0
-    base_pwm = thrust2pwm_kernel(base_thrust_per_motor)
+    base_pwm = thrust2pwm_curve_kernel(
+        base_thrust_per_motor, command_curve, pwm_scale
+    )
     #Torque component
     target_torques = jnp.clip(target_torques, -3200, 3200)
     target_torques_T = jnp.swapaxes(target_torques, -1, -2)
@@ -65,7 +74,8 @@ def rates_to_motor_thrusts_pid_kernel(
     pwm_torques = jnp.swapaxes(pwm_torques, -1, -2)
     #Total pwm
     pwm = jnp.clip(base_pwm + pwm_torques, MIN_PWM, MAX_PWM)
-    motor_thrusts = pwm2thrust_kernel(pwm)
+    motor_thrusts = pwm2thrust_curve_kernel(pwm, plant_curve, pwm_scale)
+
     return motor_thrusts, rate_err_i, rate_error_p
 
 class FOmegaControlEnv(DroneEnv):
@@ -126,6 +136,45 @@ class FOmegaControlEnv(DroneEnv):
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
         self.integral_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
         self.last_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
+        self._motor_response_state = jnp.zeros((self.num_envs, 4), device=self.sim.device)
+        self._motor_response_initialized = jnp.zeros((self.num_envs, 1), dtype=jnp.bool_, device=self.sim.device)
+        self._max_action_delay_steps = 0
+        self._action_delay_buffer = jnp.zeros((1, self.num_envs, 4), device=self.sim.device)
+        self._action_delay_initialized = jnp.zeros((self.num_envs,), dtype=jnp.bool_, device=self.sim.device)
+
+    def configure_action_delay(self, max_delay_steps: int) -> None:
+        """Allocate a fixed-size control-rate delay line for JAX-friendly use."""
+        self._max_action_delay_steps = max(0, int(max_delay_steps))
+        self._action_delay_buffer = jnp.zeros(
+            (self._max_action_delay_steps + 1, self.num_envs, 4),
+            device=self.sim.device,
+        )
+        self._action_delay_initialized = jnp.zeros(
+            (self.num_envs,), dtype=jnp.bool_, device=self.sim.device
+        )
+
+    def _apply_action_delay(self, action: Array, delay_steps: Array) -> Array:
+        if self._max_action_delay_steps == 0:
+            return action
+        delay_steps = jnp.clip(
+            jnp.asarray(delay_steps, dtype=jnp.int32).reshape(self.num_envs),
+            0,
+            self._max_action_delay_steps,
+        )
+        shifted = jnp.concatenate(
+            [action[None, ...], self._action_delay_buffer[:-1]], axis=0
+        )
+        filled = jnp.broadcast_to(action[None, ...], shifted.shape)
+        self._action_delay_buffer = jnp.where(
+            self._action_delay_initialized[None, :, None], shifted, filled
+        )
+        self._action_delay_initialized = jnp.ones_like(
+            self._action_delay_initialized
+        )
+        return self._action_delay_buffer[
+            delay_steps, jnp.arange(self.num_envs)
+        ]
+
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
         self._apply_action(action)
@@ -134,12 +183,45 @@ class FOmegaControlEnv(DroneEnv):
         self._marked_for_reset = self._done(terminated, truncated)
         return self.obs(), self.reward(), terminated, truncated, {}
 
-    def _apply_action(self, action: Array, thrust_noise: Array | None = None):
+    def _apply_action(
+        self,
+        action: Array,
+        thrust_noise: Array | None = None,
+        thrust_gain: Array | None = None,
+        thrust_tau: Array | None = None,
+        action_delay_steps: Array | None = None,
+        command_curve: Array | None = None,
+        plant_curve: Array | None = None,
+        pwm_scale: float = MAX_PWM,
+        rate_p: Array | None = None,
+        rate_i: Array | None = None,
+        rate_d: Array | None = None,
+    ):
         if thrust_noise is None:
             thrust_noise = jnp.zeros((self.num_envs, 4), device=self.sim.device)
+        if thrust_gain is None:
+            thrust_gain = jnp.ones((self.num_envs, 1), device=self.sim.device)
+        if thrust_tau is None:
+            thrust_tau = jnp.ones((self.num_envs, 1), device=self.sim.device) * 0.045
+        if action_delay_steps is None:
+            action_delay_steps = jnp.zeros((self.num_envs,), dtype=jnp.int32, device=self.sim.device)
+        if command_curve is None:
+            command_curve = jnp.broadcast_to(
+                jnp.asarray(DEFAULT_TOTAL_THRUST_CURVE, device=self.sim.device),
+                (self.num_envs, 3),
+            )
+        if plant_curve is None:
+            plant_curve = command_curve
+        if rate_p is None:
+            rate_p = jnp.broadcast_to(jnp.asarray(P_RATE), (self.num_envs, 3))
+        if rate_i is None:
+            rate_i = jnp.broadcast_to(jnp.asarray(I_RATE), (self.num_envs, 3))
+        if rate_d is None:
+            rate_d = jnp.broadcast_to(jnp.asarray(D_RATE), (self.num_envs, 3))
         low, high = self.action_space.low, self.action_space.high
         ref_action = self._sanitize_action(action, low, high, self.sim.n_worlds, self.sim.device)
         ref_action = ref_action.squeeze(axis=1)
+        ref_action = self._apply_action_delay(ref_action, action_delay_steps)
         rate_err_i = self.integral_error.squeeze(axis=1)
         last_err = self.last_error.squeeze(axis=1)
         for _ in range(self.n_substeps):
@@ -149,10 +231,40 @@ class FOmegaControlEnv(DroneEnv):
                 current_ang_vel,
                 rate_err_i,
                 last_err,
+                command_curve,
+                plant_curve,
+                pwm_scale,
+                rate_p,
+                rate_i,
+                rate_d,
                 self.sim_dt
             )
-            noisy_thrusts = motor_thrusts + thrust_noise
-            self.sim.thrust_control(noisy_thrusts.reshape(self.num_envs, 1, 4))
+            rate_err_i, last_err = new_rate_err_i, new_last_err
+            noisy_thrusts = motor_thrusts * thrust_gain + thrust_noise
+
+            # Physical first-order motor/thrust response with time constant tau.
+            alpha = self.sim_dt / (thrust_tau + self.sim_dt)  # per-env stable 0<alpha<1
+
+            if not hasattr(self, "_motor_response_state"):
+                self._motor_response_state = noisy_thrusts
+            if not hasattr(self, "_motor_response_initialized"):
+                self._motor_response_initialized = jnp.ones((self.num_envs, 1), dtype=jnp.bool_, device=self.sim.device)
+
+            response_prev = jnp.where(
+                self._motor_response_initialized,
+                self._motor_response_state,
+                noisy_thrusts,
+            )
+            self._motor_response_state = (
+                response_prev + alpha * (noisy_thrusts - response_prev)
+            )
+            self._motor_response_initialized = jnp.ones_like(
+                self._motor_response_initialized
+            )
+            delayed_thrusts = self._motor_response_state
+
+            #print(f"total motor thrust: {noisy_thrusts.sum()}")
+            self.sim.thrust_control(delayed_thrusts.reshape(self.num_envs, 1, 4))
             self.sim.step(1)
         self.integral_error = rate_err_i.reshape(self.num_envs, 1, 3)
         self.last_error = last_err.reshape(self.num_envs, 1, 3)
@@ -167,6 +279,14 @@ class FOmegaControlEnv(DroneEnv):
             self.sim.seed(seed)
         self.integral_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
         self.last_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
+        if hasattr(self, "_motor_response_state"):
+            self._motor_response_state = jnp.zeros((self.num_envs, 4), device=self.sim.device)
+        if hasattr(self, "_motor_response_initialized"):
+            self._motor_response_initialized = jnp.zeros((self.num_envs, 1), dtype=jnp.bool_, device=self.sim.device)
+        if hasattr(self, "_action_delay_buffer"):
+            self._action_delay_buffer = jnp.zeros_like(self._action_delay_buffer)
+            self._action_delay_initialized = jnp.zeros_like(self._action_delay_initialized)
+
 
     def _reset(self, mask: Array | None = None, options: dict | None = None) -> None:
         """Overrides DroneEnv._reset to reset PID states for masked envs."""
@@ -174,6 +294,13 @@ class FOmegaControlEnv(DroneEnv):
         if mask is None:
              self.integral_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
              self.last_error = jnp.zeros((self.num_envs, 1, 3), device=self.device)
+             if hasattr(self, "_motor_response_state"):
+                 self._motor_response_state = jnp.zeros((self.num_envs, 4), device=self.sim.device)
+             if hasattr(self, "_motor_response_initialized"):
+                 self._motor_response_initialized = jnp.zeros((self.num_envs, 1), dtype=jnp.bool_, device=self.sim.device)
+             if hasattr(self, "_action_delay_buffer"):
+                 self._action_delay_buffer = jnp.zeros_like(self._action_delay_buffer)
+                 self._action_delay_initialized = jnp.zeros_like(self._action_delay_initialized)
         else:
             mask_broadcast = mask.reshape(self.num_envs, 1, 1)
             self.integral_error = jnp.where(
@@ -186,6 +313,21 @@ class FOmegaControlEnv(DroneEnv):
                 0.0,
                 self.last_error
             )
+            if hasattr(self, "_motor_response_state"):
+                mask_2d = mask.reshape(self.num_envs, 1)
+                self._motor_response_state = jnp.where(mask_2d, 0.0, self._motor_response_state)
+            if hasattr(self, "_motor_response_initialized"):
+                mask_2d = mask.reshape(self.num_envs, 1)
+                self._motor_response_initialized = jnp.where(mask_2d, False, self._motor_response_initialized)
+            if hasattr(self, "_action_delay_buffer"):
+                mask_3d = mask.reshape(1, self.num_envs, 1)
+                self._action_delay_buffer = jnp.where(
+                    mask_3d, 0.0, self._action_delay_buffer
+                )
+                self._action_delay_initialized = jnp.where(
+                    mask, False, self._action_delay_initialized
+                )
+
 
     def reward(self) -> Array:
         return jnp.ones(self.num_envs)

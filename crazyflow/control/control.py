@@ -23,81 +23,34 @@ class Control(str, Enum):
     thrust = "thrust"
     default = thrust
 
-#CF21 THRUST VS PWM CONSTANTS FOR EACH MOTOR'S THRUST
-# T = A*p^2 + B*p + C (where p is 0.0 to 1.0)
-POLY_A = -0.091502/4.0
-POLY_B = 0.579921/4.0
-POLY_C = -0.045246/4.0
-#Note that in real system MIN and MAX are not zeros
-MAX_PWM_VAL = 65535 #We need to ensure the MAX PWM val is actually less than intended here
-MIN_PWM_VAL = 6000 #Directly from the thrust curve
-# Normalize PWM limits to 0.0 - 1.0 range for the polynomial
-MIN_PWM_NORM = MIN_PWM_VAL / MAX_PWM_VAL
-MAX_PWM_NORM = 1.0
-
-_min_thrust_raw = POLY_A * (MIN_PWM_NORM**2) + POLY_B * MIN_PWM_NORM + POLY_C
-MIN_THRUST = max(0.0, _min_thrust_raw)
-MAX_THRUST = POLY_A * (1.0**2) + POLY_B * (1.0) + POLY_C  # Approx 0.6884 N
-
-#True values
-KF: float = 3.16e-10
-KM: float = 7.94e-12
-
-PWM2RPM_SCALE: float = 0.2685
-PWM2RPM_CONST: float = 4070.3
-MIN_PWM: float = float(MIN_PWM_VAL)
-MAX_PWM: float = float(MAX_PWM_VAL)
-MIN_RPM: float = PWM2RPM_SCALE * MIN_PWM + PWM2RPM_CONST
-MAX_RPM: float = PWM2RPM_SCALE * MAX_PWM + PWM2RPM_CONST
-_ESTIMATED_MAX_RPM = MAX_RPM
-#PID gains, unused here
-P_F: Array = np.array([0.4, 0.4, 1.25])
-I_F: Array = np.array([0.05, 0.05, 0.05])
-D_F: Array = np.array([0.2, 0.2, 0.5])
-I_F_RANGE: Array = np.array([2.0, 2.0, 0.4])
-P_T: Array = np.array([70000.0, 70000.0, 60000.0])
-I_T: Array = np.array([0.0, 0.0, 500.0])
-D_T: Array = np.array([20000.0, 20000.0, 12000.0])
-MIN_OMEGA: float = -2.0
-MAX_OMEGA: float = 2.0 #Rads
-#CF21 values from firmware for Rate Control
-P_RATE: Array = np.array([250.0, 250.0, 120.0])
-I_RATE: Array = np.array([500.0, 500.0, 16.7])
-D_RATE: Array = np.array([2.5, 2.5, 0.0])
-I_RATE_RANGE: Array = np.array([33.3, 33.3, 166.7])
-
-# #CF21BL THRUST VS PWM CONSTANTS FOR EACH MOTOR'S THRUST
-# #T = A*p^2 + B*p + C (where p is 0.0 to 1.0)
-# POLY_A = 0.2593/4.0
-# POLY_B = 0.4694/4.0
-# POLY_C = -0.0403/4.0
-#
+# #CF21 THRUST VS PWM CONSTANTS FOR EACH MOTOR'S THRUST
+# # T = A*p^2 + B*p + C (where p is 0.0 to 1.0)
+# POLY_A = -0.091502/4.0
+# POLY_B = 0.579921/4.0
+# POLY_C = -0.045246/4.0
 # #Note that in real system MIN and MAX are not zeros
-# MAX_PWM_VAL = 0.920*65535 #We need to ensure the MAX PWM val is actually less than intended here
-# MIN_PWM_VAL = 0.082*65535 #Directly from the thrust curve
+# MAX_PWM_VAL = 65535 #We need to ensure the MAX PWM val is actually less than intended here
+# MIN_PWM_VAL = 6000 #Directly from the thrust curve
 # # Normalize PWM limits to 0.0 - 1.0 range for the polynomial
 # MIN_PWM_NORM = MIN_PWM_VAL / MAX_PWM_VAL
 # MAX_PWM_NORM = 1.0
-#
+
 # _min_thrust_raw = POLY_A * (MIN_PWM_NORM**2) + POLY_B * MIN_PWM_NORM + POLY_C
 # MIN_THRUST = max(0.0, _min_thrust_raw)
 # MAX_THRUST = POLY_A * (1.0**2) + POLY_B * (1.0) + POLY_C  # Approx 0.6884 N
-#
-# #Estimate other constants
-# _ESTIMATED_MAX_RPM = 30000.0 #Assumed max 30k RPM
-# KF: float = MAX_THRUST / (_ESTIMATED_MAX_RPM**2)  # Back-calculated KF
-# _ORIG_RATIO = 8.5e-12 / 3.41e-10 #Previously computed ratio
-# KM: float = KF * _ORIG_RATIO
-#
-# #Legacy/Unused constants kept for compatibility with other imports
-# PWM2RPM_SCALE: float = 0.436
-# PWM2RPM_CONST: float = 1884.0
+
+# #True values
+# KF: float = 3.16e-10
+# KM: float = 7.94e-12
+
+# PWM2RPM_SCALE: float = 0.2685
+# PWM2RPM_CONST: float = 4070.3
 # MIN_PWM: float = float(MIN_PWM_VAL)
 # MAX_PWM: float = float(MAX_PWM_VAL)
-# MIN_RPM: float = 0.0
-# MAX_RPM: float = _ESTIMATED_MAX_RPM
-#
-# #PID gains
+# MIN_RPM: float = PWM2RPM_SCALE * MIN_PWM + PWM2RPM_CONST
+# MAX_RPM: float = PWM2RPM_SCALE * MAX_PWM + PWM2RPM_CONST
+# _ESTIMATED_MAX_RPM = MAX_RPM
+# #PID gains, unused here
 # P_F: Array = np.array([0.4, 0.4, 1.25])
 # I_F: Array = np.array([0.05, 0.05, 0.05])
 # D_F: Array = np.array([0.2, 0.2, 0.5])
@@ -105,13 +58,77 @@ I_RATE_RANGE: Array = np.array([33.3, 33.3, 166.7])
 # P_T: Array = np.array([70000.0, 70000.0, 60000.0])
 # I_T: Array = np.array([0.0, 0.0, 500.0])
 # D_T: Array = np.array([20000.0, 20000.0, 12000.0])
-# MIN_OMEGA: float = -4.0
-# MAX_OMEGA: float = 4.0 #Rads
-# #CF21BL
-# P_RATE: Array = np.array([200.0, 200.0, 120.0])
-# I_RATE: Array = np.array([400.0, 400.0, 16.7])
+# MIN_OMEGA: float = -2.0
+# MAX_OMEGA: float = 2.0 #Rads
+# #CF21 values from firmware for Rate Control
+# P_RATE: Array = np.array([250.0, 250.0, 120.0])
+# I_RATE: Array = np.array([500.0, 500.0, 16.7])
 # D_RATE: Array = np.array([2.5, 2.5, 0.0])
-# I_RATE_RANGE: Array = np.array([33.3, 33.3, 166.7]) # Anti-windup clip
+# I_RATE_RANGE: Array = np.array([33.3, 33.3, 166.7])
+
+#CF21BL THRUST VS PWM CONSTANTS FOR EACH MOTOR'S THRUST
+#T = A*p^2 + B*p + C (where p is 0.0 to 1.0)
+# POLY_A = 0.2593/4.0
+# POLY_B = 0.4694/4.0
+# POLY_C = -0.0403/4.0
+#Is this the new mappings we found? yeah but I did it in wrong sequence (A and B are switched but even that it should show z higher
+# POLY_A = 0.35/4.0
+# POLY_B = 0.26/4.0
+# POLY_C = 0.0/4.0
+POLY_A = -2.199045963119e-02 /4.0
+POLY_B = 7.659665118497e-01 /4.0
+POLY_C = -2.384504350144e-02/4.0
+DEFAULT_TOTAL_THRUST_CURVE = np.array([
+    4.0 * POLY_A,
+    4.0 * POLY_B,
+    4.0 * POLY_C,
+])
+# POLY_A = 0.35/4.0
+# POLY_B = 0.26/4.0
+# POLY_C = -0.024/4.0
+#Where is lee log?
+#Note that in real system MIN and MAX are not zeros
+MAX_PWM_VAL = 65535 #We need to ensure the MAX PWM val is actually less than intended here
+MIN_PWM_VAL = 0 #Directly from the thrust curve
+# Normalize PWM limits to 0.0 - 1.0 range for the polynomial
+MIN_PWM_NORM = MIN_PWM_VAL / MAX_PWM_VAL
+MAX_PWM_NORM = 1.0
+
+_min_thrust_raw = POLY_A * (MIN_PWM_NORM**2) + POLY_B * MIN_PWM_NORM + POLY_C
+MIN_THRUST = max(0.0, _min_thrust_raw)
+#MAX_THRUST = POLY_A * (1.0**2) + POLY_B * (1.0) + POLY_C  # Approx 0.6884 N
+MAX_THRUST = 0.759/4
+
+#Estimate other constants
+_ESTIMATED_MAX_RPM = 30000.0 #Assumed max 30k RPM
+KF: float = 3.5e-10
+# KF: float = MAX_THRUST / (_ESTIMATED_MAX_RPM**2)  # Back-calculated KF
+_ORIG_RATIO = 8.5e-12 / 3.41e-10 #Previously computed ratio
+KM: float = KF * _ORIG_RATIO
+
+#Legacy/Unused constants kept for compatibility with other imports
+PWM2RPM_SCALE: float = 0.436
+PWM2RPM_CONST: float = 1884.0
+MIN_PWM: float = float(MIN_PWM_VAL)
+MAX_PWM: float = float(MAX_PWM_VAL)
+MIN_RPM: float = 0.0
+MAX_RPM: float = _ESTIMATED_MAX_RPM
+
+#PID gains
+P_F: Array = np.array([0.4, 0.4, 1.25])
+I_F: Array = np.array([0.05, 0.05, 0.05])
+D_F: Array = np.array([0.2, 0.2, 0.5])
+I_F_RANGE: Array = np.array([2.0, 2.0, 0.4])
+P_T: Array = np.array([70000.0, 70000.0, 60000.0])
+I_T: Array = np.array([0.0, 0.0, 500.0])
+D_T: Array = np.array([20000.0, 20000.0, 12000.0])
+MIN_OMEGA: float = -4.0
+MAX_OMEGA: float = 4.0 #Rads
+#CF21BL
+P_RATE: Array = np.array([200.0, 200.0, 120.0])
+I_RATE: Array = np.array([450.0, 450.0, 16.7])
+D_RATE: Array = np.array([2.5, 2.5, 0.0])
+I_RATE_RANGE: Array = np.array([33.3, 33.3, 166.7]) # Anti-windup clip
 
 @partial(jnp.vectorize, signature="(3),(3),(4),(3),(3),(1),(3)->(4),(3)", excluded=[7])
 def state2attitude(
@@ -171,6 +188,12 @@ def thrust2pwm(thrust: Array) -> Array:
     delta = jnp.maximum(delta, 0.0)
     p_norm = (-POLY_B + jnp.sqrt(delta)) / (2 * POLY_A)
     pwm_val = p_norm * MAX_PWM
+
+    # jax.debug.print(
+    # "thrust={} MIN={} MAX={} p_norm={} MAX_PWM={} pwm={}",
+    # thrust, MIN_THRUST, MAX_THRUST, p_norm, MAX_PWM, pwm_val
+    # )
+
     return jnp.clip(pwm_val, MIN_PWM, MAX_PWM)
 
 @jax.jit
@@ -199,6 +222,50 @@ def pwm2thrust_kernel(pwm: Array) -> Array:
     p_norm = pwm / MAX_PWM
     thrust = POLY_A * (p_norm**2) + POLY_B * p_norm + POLY_C
     return jnp.clip(thrust, 0.0, MAX_THRUST)
+
+
+@jax.jit
+def thrust2pwm_curve_kernel(
+    thrust: Array,
+    total_curve: Array,
+    pwm_scale: float,
+) -> Array:
+    """Invert a configurable *total-thrust* curve for each environment.
+
+    ``total_curve`` has shape ``(n_envs, 3)`` and stores ``[A, B, C]`` for
+    ``T_total = A*d**2 + B*d + C``.  The controller works per motor, so the
+    coefficients are divided by four here.  Keeping the command curve separate
+    from the plant curve lets domain randomization change the response without
+    changing the action definition seen by the policy.
+    """
+    thrust = jnp.clip(thrust, MIN_THRUST, MAX_THRUST)
+    a = total_curve[:, 0:1] / 4.0
+    b = total_curve[:, 1:2] / 4.0
+    c = total_curve[:, 2:3] / 4.0
+    discriminant = jnp.maximum(b**2 - 4.0 * a * (c - thrust), 0.0)
+    quadratic_root = (-b + jnp.sqrt(discriminant)) / jnp.where(
+        jnp.abs(2.0 * a) > 1e-8, 2.0 * a, 1.0
+    )
+    linear_root = (thrust - c) / jnp.where(jnp.abs(b) > 1e-8, b, 1.0)
+    duty = jnp.where(jnp.abs(a) > 1e-8, quadratic_root, linear_root)
+    return jnp.clip(duty * pwm_scale, MIN_PWM, MAX_PWM)
+
+
+@jax.jit
+def pwm2thrust_curve_kernel(
+    pwm: Array,
+    total_curve: Array,
+    pwm_scale: float,
+) -> Array:
+    """Apply a configurable plant-side total-thrust curve per environment."""
+    duty = pwm / pwm_scale
+    a = total_curve[:, 0:1] / 4.0
+    b = total_curve[:, 1:2] / 4.0
+    c = total_curve[:, 2:3] / 4.0
+    thrust = a * duty**2 + b * duty + c
+    # Do not clip to the nominal MAX_THRUST: a randomized plant is allowed to
+    # produce more or less thrust at the same PWM.  Negative thrust is invalid.
+    return jnp.maximum(thrust, 0.0)
 
 #Legacy Wrappers
 @partial(jnp.vectorize, signature="(4)->(4)")

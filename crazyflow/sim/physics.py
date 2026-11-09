@@ -106,7 +106,9 @@ def rpms2collective_wrench(
 @partial(vectorize, signature="(4)->(4)")
 def rpms2motor_forces(rpms: Array) -> Array:
     """Convert RPMs to motor forces (body frame, along the z-axis)."""
-    return rpms**2 * KF
+    # jax.debug.print("force={}",rpms**2 * 3.5e-10)
+
+    return rpms**2 * 3.5e-10
 
 
 @partial(vectorize, signature="(4)->(4)")
